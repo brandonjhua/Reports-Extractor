@@ -350,7 +350,7 @@ function parseMR200(sheet, fileName) {
     const employeeMatch = colA.match(/^Employee:\s*([^:]+):\s*(.+)$/);
     if (employeeMatch) {
       currentId = employeeMatch[1].trim();
-      employeesFound[currentId] = { name: employeeMatch[2].trim(), pca: 0, jm: 0 };
+      employeesFound[currentId] = { name: currentId, pca: 0, jm: 0 };
       section = 'services';
       continue;
     }
