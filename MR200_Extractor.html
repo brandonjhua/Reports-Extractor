@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MR200 Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --sage: #7c9a82;
+    --sage-dark: #5f7d66;
+    --sage-light: #eaf1ea;
+    --blush: #e8c4b8;
+    --blush-dark: #c98f7c;
+    --cream: #faf6f0;
+    --card: #ffffff;
+    --ink: #3b3733;
+    --ink-soft: #756f68;
+    --border: #e6ddd2;
+    --amber-bg: #fdf3e2;
+    --amber-border: #e8c789;
+    --pca-bg: #e2e7f5;
+    --pca-text: #3d4a8a;
+    --jm-bg: #ece0f3;
+    --jm-text: #6a3f8f;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Nunito Sans', Arial, sans-serif;
+    color: var(--ink);
+    background: linear-gradient(180deg, var(--cream) 0%, #f3ede3 100%);
+    margin: 0;
+    padding: 2.5rem 1rem 5rem;
+  }
+
+  .page { max-width: 1900px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 2.5rem; }
+  .leaf { font-size: 2rem; display: block; margin-bottom: 0.25rem; }
+  h1 {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    font-size: 2.6rem;
+    margin: 0 0 0.4rem;
+    color: var(--sage-dark);
+    letter-spacing: 0.02em;
+  }
+  header p {
+    color: var(--ink-soft);
+    font-size: 0.98rem;
+    max-width: 620px;
+    margin: 0 auto;
+    line-height: 1.55;
+  }
+  header p code {
+    background: var(--sage-light);
+    color: var(--sage-dark);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: 0 4px 18px rgba(120, 100, 70, 0.08);
+    border: 1px solid var(--border);
+  }
+
+  #dropzone {
+    padding: 3rem 2rem;
+    text-align: center;
+    color: var(--ink-soft);
+    cursor: pointer;
+    border: 2px dashed #cfc2b0;
+    border-radius: 16px;
+    background: var(--card);
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+    margin-bottom: 1.25rem;
+  }
+  #dropzone:hover { border-color: var(--sage); background: var(--sage-light); }
+  #dropzone.drag { border-color: var(--sage-dark); background: var(--sage-light); transform: scale(1.005); }
+  #dropzone .drop-icon { font-size: 2rem; display: block; margin-bottom: 0.5rem; }
+  #dropzone .drop-title { font-weight: 700; color: var(--ink); font-size: 1.05rem; }
+  #dropzone .drop-sub { font-size: 0.85rem; margin-top: 0.25rem; color: var(--ink-soft); }
+
+  #status {
+    min-height: 1.4rem;
+    color: var(--sage-dark);
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin: 0.75rem 0 1.25rem;
+    padding: 0 0.25rem;
+    white-space: pre-wrap;
+  }
+  #status:empty { margin: 0; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
+  button {
+    font-family: inherit;
+    font-size: 0.88rem;
+    font-weight: 700;
+    padding: 0.6rem 1.15rem;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 1.5px solid var(--sage);
+    background: var(--sage);
+    color: #fff;
+    transition: background 0.15s ease, transform 0.05s ease;
+  }
+  button:hover { background: var(--sage-dark); border-color: var(--sage-dark); }
+  button:active { transform: scale(0.97); }
+  button#clearAll { background: transparent; color: var(--ink-soft); border-color: var(--border); }
+  button#clearAll:hover { background: #f1ece3; color: var(--ink); border-color: #cfc2b0; }
+
+  .hint {
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    margin: 0 0 1.5rem 0.25rem;
+  }
+
+  .quarter-section { margin-bottom: 2.25rem; }
+  .quarter-title {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sage-dark);
+    margin: 0 0 0.6rem 0.1rem;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: 16px;
+  }
+  table { border-collapse: collapse; width: 100%; background: var(--card); font-size: 0.85rem; table-layout: auto; }
+  th, td { padding: 0.45rem 0.55rem; text-align: left; border-bottom: 1px solid var(--border); border-right: 1px solid #f0ebe2; }
+  td { white-space: nowrap; }
+  thead th {
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    position: sticky;
+    top: 0;
+    user-select: none;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.2;
+    font-size: 0.82rem;
+    max-width: 90px;
+  }
+  thead tr:first-child th { background: var(--sage); color: #fff; }
+  thead th[data-col] { cursor: pointer; }
+  thead th[data-col]:hover { filter: brightness(0.93); }
+  thead th[data-col]::after { content: ' \2398'; opacity: 0.6; font-size: 0.75em; }
+  thead th.col-selected { background: var(--blush-dark) !important; color: #fff !important; }
+  th.pca-group-header { background: var(--pca-bg); color: var(--pca-text); }
+  th.jm-group-header { background: var(--jm-bg); color: var(--jm-text); }
+  thead tr:nth-child(2) th:nth-child(-n+7) { background: #f4f6fb; color: var(--pca-text); }
+  tbody tr:nth-child(even) { background: #faf8f4; }
+  tbody tr:hover { background: var(--sage-light); }
+  td.col-selected { background: #f6e4dd; }
+  tr.location-start td { border-top: 2px solid var(--sage); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--sage-dark); }
+  td.blank-cell { color: #ccc; }
+
+  .empty-state {
+    text-align: center;
+    color: var(--ink-soft);
+    padding: 2rem;
+    font-style: italic;
+  }
+
+  #uncategorizedPanel {
+    margin-top: 1.75rem;
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    border-radius: 14px;
+    padding: 1.1rem 1.4rem;
+  }
+  #uncategorizedPanel h2 {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 1.25rem;
+    margin: 0 0 0.35rem;
+    color: #8a6a1f;
+  }
+  #uncategorizedPanel p { color: #7a6432; font-size: 0.85rem; margin: 0 0 0.6rem; }
+  #uncategorizedList { margin: 0; padding-left: 1.2rem; font-size: 0.85rem; color: #5a4a1f; }
+  #uncategorizedList li { margin-bottom: 0.2rem; }
+
+  footer {
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 0.78rem;
+    margin-top: 2.5rem;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <span class="leaf">🌿</span>
+    <h1>MR200 Extractor</h1>
+    <p>Drop one or more <code>MR200.xlsx</code> reports below. Numbers build up here month by month — drop this month's files whenever you get them, and they'll fill into the right columns below. A report already loaded won't be added twice.</p>
+  </header>
+
+  <div id="dropzone" class="card">
+    <span class="drop-icon">📄</span>
+    <div class="drop-title">Drop MR200.xlsx file(s) here</div>
+    <div class="drop-sub">or click to choose from your computer</div>
+  </div>
+  <input type="file" id="fileInput" accept=".xlsx" multiple style="display:none">
+
+  <div id="status"></div>
+
+  <div class="toolbar">
+    <button id="exportXlsx">Export to Excel</button>
+    <button id="copyTsv">Copy everything</button>
+    <button id="downloadCsv">Download CSV</button>
+    <button id="clearAll">Clear all data</button>
+  </div>
+
+  <p class="hint">Click a column header to highlight that column and copy its values to the clipboard. Rewards and tier columns are left blank for now.</p>
+
+  <div id="tablesContainer"></div>
+
+  <div id="uncategorizedPanel" style="display:none;">
+    <h2>Uncategorized product/service lines</h2>
+    <p>Not counted as PCA or Marini. Check this list — if any of these are actually PCA or Marini products under an unfamiliar code, let me know so the matching rule can be extended.</p>
+    <ul id="uncategorizedList"></ul>
+  </div>
+
+  <footer>For internal use — nothing here leaves your browser. Data is kept in this browser only (localStorage).</footer>
+
+</div>
+
+<script>
+const STORAGE_KEY = 'mr200_dashboard_v2';
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const QUARTER_MONTHS = { 1: MONTH_NAMES.slice(0,3), 2: MONTH_NAMES.slice(3,6), 3: MONTH_NAMES.slice(6,9), 4: MONTH_NAMES.slice(9,12) };
+
+let employees = {};       // key: "location||name" -> { location, name, months: { "June-2026": {pca, jm} } }
+let loadedReports = new Set(); // "location||month||year"
+const uncategorized = new Map();
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const statusEl = document.getElementById('status');
+const tablesContainer = document.getElementById('tablesContainer');
+
+loadState();
+render();
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(fileList) {
+  const files = Array.from(fileList).filter(f => /\.xlsx$/i.test(f.name));
+  if (!files.length) { setStatus('No .xlsx files found in that drop.'); return; }
+  setStatus('Reading ' + files.length + ' file(s)...');
+  let done = 0;
+  const loadedNames = [];
+  const skippedNames = [];
+
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const report = parseMR200(sheet, file.name);
+        const reportKey = report.location + '||' + report.month + '||' + report.year;
+
+        if (loadedReports.has(reportKey)) {
+          skippedNames.push(file.name + ' (' + report.location + ' / ' + report.month + ' ' + report.year + ' already loaded)');
+        } else {
+          loadedReports.add(reportKey);
+          Object.values(report.employees).forEach(emp => {
+            const empKey = report.location + '||' + emp.name;
+            if (!employees[empKey]) employees[empKey] = { location: report.location, name: emp.name, months: {} };
+            employees[empKey].months[report.month + '-' + report.year] = { pca: emp.pca, jm: emp.jm };
+          });
+          loadedNames.push(file.name + ' (' + report.location + ' / ' + report.month + ' ' + report.year + ')');
+        }
+      } catch (err) {
+        skippedNames.push(file.name + ' -- error: ' + err.message);
+      }
+      done++;
+      if (done === files.length) {
+        saveState();
+        render();
+        const parts = [];
+        if (loadedNames.length) parts.push('Added: ' + loadedNames.join(', '));
+        if (skippedNames.length) parts.push('Skipped: ' + skippedNames.join(', '));
+        setStatus(parts.join('\n') || 'Nothing new to add.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function setStatus(msg) { statusEl.textContent = msg; }
+
+function cellText(sheet, addr) {
+  const cell = sheet[addr];
+  return cell ? String(cell.v) : '';
+}
+
+function parseMR200(sheet, fileName) {
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  const location = cellText(sheet, 'A1').trim();
+
+  const dateLine = cellText(sheet, 'A3');
+  const dateMatch = dateLine.match(/From:\s*\S+\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!dateMatch) throw new Error('Could not find date range in row 3 of ' + fileName);
+  const startDate = new Date(Number(dateMatch[3]), Number(dateMatch[1]) - 1, Number(dateMatch[2]));
+  const month = startDate.toLocaleString('en-US', { month: 'long' });
+  const year = startDate.getFullYear();
+
+  const employeesFound = {};
+  let currentId = null;
+  let section = null;
+
+  for (let r = 4; r <= range.e.r; r++) {
+    const colA = cellText(sheet, 'A' + (r + 1));
+    const employeeMatch = colA.match(/^Employee:\s*([^:]+):\s*(.+)$/);
+    if (employeeMatch) {
+      currentId = employeeMatch[1].trim();
+      employeesFound[currentId] = { name: employeeMatch[2].trim(), pca: 0, jm: 0 };
+      section = 'services';
+      continue;
+    }
+    if (!currentId) continue;
+    if (colA === 'Products') { section = 'products'; continue; }
+    if (section !== 'products') continue;
+
+    const description = cellText(sheet, 'F' + (r + 1));
+    const priceCell = sheet['K' + (r + 1)];
+    const price = priceCell ? priceCell.v : undefined;
+    if (!description.includes(':') || description.startsWith('Total') || typeof price !== 'number') continue;
+
+    const brand = classifyBrand(description);
+    if (brand === 'pca') employeesFound[currentId].pca += price;
+    else if (brand === 'jm') employeesFound[currentId].jm += price;
+    else recordUncategorized(description);
+  }
+
+  return { location, month, year, employees: employeesFound };
+}
+
+// Products are tagged with a code (before the colon) and a description. Most
+// PCA items say "PCA" in the description; most Marini items say "Marini" --
+// but some Marini SKUs (code prefix "MSE" or "JM") only spell it out in the
+// code, e.g. "MSEBP0016: MS Benzoyl Peroxide Acne Treatment Lotion 5%".
+function classifyBrand(description) {
+  const code = description.split(':')[0].trim().toLowerCase();
+  const lower = description.toLowerCase();
+  if (code.startsWith('pca') || lower.includes('pca')) return 'pca';
+  if (code.startsWith('jm') || code.startsWith('mse') || lower.includes('marini')) return 'jm';
+  return null;
+}
+
+function recordUncategorized(description) {
+  uncategorized.set(description, (uncategorized.get(description) || 0) + 1);
+}
+
+function quarterOfMonth(monthName) {
+  return Math.floor(MONTH_NAMES.indexOf(monthName) / 3) + 1;
+}
+
+function fmt(v) {
+  if (v === undefined || v === null) return '';
+  return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function getQuarterGroups() {
+  const quarters = {}; // "2026-2" -> { year, quarter, months: [..] }
+  Object.values(employees).forEach(emp => {
+    Object.keys(emp.months).forEach(monthKey => {
+      const [monthName, yearStr] = monthKey.split('-');
+      const year = Number(yearStr);
+      const q = quarterOfMonth(monthName);
+      const qKey = year + '-' + q;
+      if (!quarters[qKey]) quarters[qKey] = { year, quarter: q, months: QUARTER_MONTHS[q] };
+    });
+  });
+
+  const quarterKeys = Object.keys(quarters).sort((a, b) => {
+    const A = quarters[a], B = quarters[b];
+    return A.year - B.year || A.quarter - B.quarter;
+  });
+
+  return quarterKeys.map(qKey => {
+    const qInfo = quarters[qKey];
+    const empList = Object.values(employees)
+      .filter(emp => qInfo.months.some(m => emp.months[m + '-' + qInfo.year]))
+      .sort((a, b) => a.location.localeCompare(b.location) || a.name.localeCompare(b.name));
+    return { qKey, label: 'Q' + qInfo.quarter + ' ' + qInfo.year, qInfo, empList };
+  });
+}
+
+function render() {
+  tablesContainer.innerHTML = '';
+
+  const groups = getQuarterGroups();
+
+  if (!groups.length) {
+    tablesContainer.innerHTML = '<p class="empty-state">No reports loaded yet. Drop your first MR200.xlsx above.</p>';
+  } else {
+    groups.forEach(({ qKey, label, qInfo, empList }) => {
+      const section = document.createElement('div');
+      section.className = 'quarter-section';
+      const title = document.createElement('div');
+      title.className = 'quarter-title';
+      title.textContent = label;
+      section.appendChild(title);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'table-wrap card';
+      wrap.appendChild(buildQuarterTable(qInfo, qKey, empList));
+      section.appendChild(wrap);
+
+      tablesContainer.appendChild(section);
+    });
+  }
+
+  renderUncategorized();
+}
+
+function buildQuarterTable(qInfo, qKey, empList) {
+  const [m1, m2, m3] = qInfo.months;
+  const table = document.createElement('table');
+  table.id = 'table-' + qKey;
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th rowspan="2" data-col="0" title="Click to copy this column">Location</th>
+        <th rowspan="2" data-col="1" title="Click to copy this column">ESTY</th>
+        <th rowspan="2" data-col="2" title="Click to copy this column">Total Quarter Sales</th>
+        <th colspan="6" class="pca-group-header">PCA</th>
+        <th colspan="7" class="jm-group-header">Marini Skin Solutions</th>
+      </tr>
+      <tr>
+        <th data-col="3" title="Click to copy this column">${m1}</th>
+        <th data-col="4" title="Click to copy this column">${m2}</th>
+        <th data-col="5" title="Click to copy this column">${m3}</th>
+        <th data-col="6" title="Click to copy this column">PCA Total</th>
+        <th data-col="7" title="Click to copy this column">PCA Rewards</th>
+        <th data-col="8" title="Click to copy this column">Needed to hit Next Tier!</th>
+        <th data-col="9" title="Click to copy this column">${m1}</th>
+        <th data-col="10" title="Click to copy this column">${m2}</th>
+        <th data-col="11" title="Click to copy this column">${m3}</th>
+        <th data-col="12" title="Click to copy this column">JM Total</th>
+        <th data-col="13" title="Click to copy this column">JM % Back</th>
+        <th data-col="14" title="Click to copy this column">JM Rewards</th>
+        <th data-col="15" title="Click to copy this column">Needed to hit Next Tier!</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
+  const tbody = table.querySelector('tbody');
+  let lastLocation = null;
+  empList.forEach(emp => {
+    const pcaVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).pca);
+    const jmVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).jm);
+    const pcaTotal = pcaVals.reduce((s, v) => s + (v || 0), 0);
+    const jmTotal = jmVals.reduce((s, v) => s + (v || 0), 0);
+    const total = pcaTotal + jmTotal;
+
+    const tr = document.createElement('tr');
+    if (emp.location !== lastLocation) { tr.classList.add('location-start'); lastLocation = emp.location; }
+
+    const monthCell = v => v === undefined ? '<td class="num blank-cell"></td>' : `<td class="num">${fmt(v)}</td>`;
+
+    tr.innerHTML = `
+      <td>${emp.location}</td>
+      <td>${emp.name}</td>
+      <td class="num">${fmt(total)}</td>
+      ${monthCell(pcaVals[0])}
+      ${monthCell(pcaVals[1])}
+      ${monthCell(pcaVals[2])}
+      <td class="num">${fmt(pcaTotal)}</td>
+      <td></td>
+      <td></td>
+      ${monthCell(jmVals[0])}
+      ${monthCell(jmVals[1])}
+      ${monthCell(jmVals[2])}
+      <td class="num">${fmt(jmTotal)}</td>
+      <td></td>
+      <td></td>
+      <td></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  attachColumnClickHandlers(table);
+  return table;
+}
+
+function attachColumnClickHandlers(table) {
+  table.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = Number(th.dataset.col);
+      const tbody = table.querySelector('tbody');
+      const cells = Array.from(tbody.querySelectorAll(`td:nth-child(${col + 1})`));
+      if (!cells.length) return;
+
+      table.querySelectorAll('.col-selected').forEach(el => el.classList.remove('col-selected'));
+      th.classList.add('col-selected');
+      cells.forEach(td => td.classList.add('col-selected'));
+
+      const text = cells.map(td => td.textContent).join('\n');
+      navigator.clipboard.writeText(text)
+        .then(() => setStatus('Copied ' + cells.length + ' value(s) from "' + th.textContent.trim() + '" to clipboard.'));
+    });
+  });
+}
+
+function renderUncategorized() {
+  const panel = document.getElementById('uncategorizedPanel');
+  const list = document.getElementById('uncategorizedList');
+  list.innerHTML = '';
+  if (uncategorized.size === 0) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  Array.from(uncategorized.entries()).sort().forEach(([desc, count]) => {
+    const li = document.createElement('li');
+    li.textContent = desc + (count > 1 ? '  (x' + count + ')' : '');
+    list.appendChild(li);
+  });
+}
+
+function monthColumnLabels(groups) {
+  const positions = [[], [], []];
+  groups.forEach(({ qInfo }) => {
+    qInfo.months.forEach((m, i) => {
+      if (!positions[i].includes(m)) positions[i].push(m);
+    });
+  });
+  return positions.map((months, i) => months.length ? months.join('/') : 'Month ' + (i + 1));
+}
+
+function flatExportRows() {
+  const groups = getQuarterGroups();
+  const [m1, m2, m3] = monthColumnLabels(groups);
+  const header = ['Quarter', 'Location', 'ESTY', 'Total Quarter Sales',
+    m1 + ' (PCA)', m2 + ' (PCA)', m3 + ' (PCA)', 'PCA Total', 'PCA Rewards', 'Needed to hit Next Tier! (PCA)',
+    m1 + ' (JM)', m2 + ' (JM)', m3 + ' (JM)', 'JM Total', 'JM % Back', 'JM Rewards', 'Needed to hit Next Tier! (JM)'];
+  const lines = [header];
+
+  groups.forEach(({ label, qInfo, empList }) => {
+    empList.forEach(emp => {
+      const pcaVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).pca);
+      const jmVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).jm);
+      const pcaTotal = pcaVals.reduce((s, v) => s + (v || 0), 0);
+      const jmTotal = jmVals.reduce((s, v) => s + (v || 0), 0);
+      const total = pcaTotal + jmTotal;
+      lines.push([
+        label, emp.location, emp.name, total.toFixed(2),
+        pcaVals[0] === undefined ? '' : pcaVals[0].toFixed(2),
+        pcaVals[1] === undefined ? '' : pcaVals[1].toFixed(2),
+        pcaVals[2] === undefined ? '' : pcaVals[2].toFixed(2),
+        pcaTotal.toFixed(2), '', '',
+        jmVals[0] === undefined ? '' : jmVals[0].toFixed(2),
+        jmVals[1] === undefined ? '' : jmVals[1].toFixed(2),
+        jmVals[2] === undefined ? '' : jmVals[2].toFixed(2),
+        jmTotal.toFixed(2), '', '', ''
+      ]);
+    });
+  });
+
+  return lines;
+}
+
+function exportToExcel() {
+  const groups = getQuarterGroups();
+  if (!groups.length) { setStatus('Nothing to export yet.'); return; }
+
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+
+  groups.forEach(({ label, qInfo, empList }) => {
+    const [m1, m2, m3] = qInfo.months;
+    const rows = [
+      ['Location', 'ESTY', 'Total Quarter Sales', 'PCA', '', '', '', '', '', 'Marini Skin Solutions', '', '', '', '', '', ''],
+      ['', '', '', m1, m2, m3, 'PCA Total', 'PCA Rewards', 'Needed to hit Next Tier!', m1, m2, m3, 'JM Total', 'JM % Back', 'JM Rewards', 'Needed to hit Next Tier!']
+    ];
+
+    empList.forEach(emp => {
+      const pcaVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).pca);
+      const jmVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).jm);
+      const pcaTotal = pcaVals.reduce((s, v) => s + (v || 0), 0);
+      const jmTotal = jmVals.reduce((s, v) => s + (v || 0), 0);
+      rows.push([
+        emp.location, emp.name, pcaTotal + jmTotal,
+        pcaVals[0] === undefined ? '' : pcaVals[0],
+        pcaVals[1] === undefined ? '' : pcaVals[1],
+        pcaVals[2] === undefined ? '' : pcaVals[2],
+        pcaTotal, '', '',
+        jmVals[0] === undefined ? '' : jmVals[0],
+        jmVals[1] === undefined ? '' : jmVals[1],
+        jmVals[2] === undefined ? '' : jmVals[2],
+        jmTotal, '', '', ''
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },  // Location
+      { s: { r: 0, c: 1 }, e: { r: 1, c: 1 } },  // ESTY
+      { s: { r: 0, c: 2 }, e: { r: 1, c: 2 } },  // Total Quarter Sales
+      { s: { r: 0, c: 3 }, e: { r: 0, c: 8 } },  // PCA group header
+      { s: { r: 0, c: 9 }, e: { r: 0, c: 15 } }  // Marini group header
+    ];
+    ws['!cols'] = [
+      { wch: 16 }, { wch: 20 }, { wch: 16 },
+      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 15 },
+      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 15 }
+    ];
+
+    const currencyCols = [2, 3, 4, 5, 6, 9, 10, 11, 12];
+    for (let r = 2; r < rows.length; r++) {
+      currencyCols.forEach(c => {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = '$#,##0.00';
+      });
+    }
+
+    let sheetName = label.replace(/[:\\\/\?\*\[\]]/g, '').slice(0, 31);
+    let suffix = 2;
+    while (usedNames.has(sheetName)) { sheetName = (label + ' (' + suffix + ')').slice(0, 31); suffix++; }
+    usedNames.add(sheetName);
+
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  XLSX.writeFile(wb, 'MR200_Dashboard_Export.xlsx');
+  setStatus('Exported ' + groups.length + ' quarter sheet(s) to Excel.');
+}
+
+document.getElementById('exportXlsx').addEventListener('click', exportToExcel);
+
+document.getElementById('copyTsv').addEventListener('click', () => {
+  const tsv = flatExportRows().map(line => line.join('\t')).join('\n');
+  navigator.clipboard.writeText(tsv).then(() => setStatus('Copied everything to clipboard — paste directly into a spreadsheet.'));
+});
+
+document.getElementById('downloadCsv').addEventListener('click', () => {
+  const csv = flatExportRows().map(line => line.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'mr200_extract.csv';
+  a.click();
+});
+
+document.getElementById('clearAll').addEventListener('click', () => {
+  if (!confirm('Clear all loaded months and start over? This cannot be undone.')) return;
+  employees = {};
+  loadedReports = new Set();
+  uncategorized.clear();
+  saveState();
+  render();
+  setStatus('Cleared.');
+});
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    employees: employees,
+    loadedReports: Array.from(loadedReports),
+    uncategorized: Array.from(uncategorized.entries())
+  }));
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    employees = data.employees || {};
+    loadedReports = new Set(data.loadedReports || []);
+    (data.uncategorized || []).forEach(([d, c]) => uncategorized.set(d, c));
+  } catch (e) {
+    // ignore corrupt saved state
+  }
+}
+</script>
+</body>
+</html>
