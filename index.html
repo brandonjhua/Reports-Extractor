@@ -154,6 +154,8 @@
   thead th[data-col] { cursor: pointer; }
   thead th[data-col]:hover { filter: brightness(0.93); }
   thead th[data-col]::after { content: ' \2398'; opacity: 0.6; font-size: 0.75em; }
+  thead th.sort-asc::before { content: '\25B2 '; font-size: 0.75em; }
+  thead th.sort-desc::before { content: '\25BC '; font-size: 0.75em; }
   thead th.col-selected { background: var(--blush-dark) !important; color: #fff !important; }
   th.pca-group-header { background: var(--pca-bg); color: var(--pca-text); }
   th.jm-group-header { background: var(--jm-bg); color: var(--jm-text); }
@@ -222,7 +224,7 @@
     <button id="clearAll">Clear all data</button>
   </div>
 
-  <p class="hint">Click a column header to highlight that column and copy its values to the clipboard. Rewards and tier columns are left blank for now.</p>
+  <p class="hint">Click a column header to sort the table by that column (click again to reverse) and copy its values to the clipboard. Rewards and tier columns are left blank for now.</p>
 
   <div id="tablesContainer"></div>
 
@@ -244,6 +246,7 @@ const QUARTER_MONTHS = { 1: MONTH_NAMES.slice(0,3), 2: MONTH_NAMES.slice(3,6), 3
 let employees = {};       // key: "location||name" -> { location, name, months: { "June-2026": {pca, jm} } }
 let loadedReports = new Set(); // "location||month||year"
 const uncategorized = new Map();
+let sortState = {}; // "2026-2" -> { col: number, dir: 'asc'|'desc' }
 
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
@@ -382,6 +385,40 @@ function fmt(v) {
   return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function sortValueFor(emp, qInfo, col) {
+  const pcaVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).pca);
+  const jmVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).jm);
+  const pcaTotal = pcaVals.reduce((s, v) => s + (v || 0), 0);
+  const jmTotal = jmVals.reduce((s, v) => s + (v || 0), 0);
+  switch (col) {
+    case 0: return emp.location;
+    case 1: return emp.name;
+    case 2: return pcaTotal + jmTotal;
+    case 3: return pcaVals[0];
+    case 4: return pcaVals[1];
+    case 5: return pcaVals[2];
+    case 6: return pcaTotal;
+    case 9: return jmVals[0];
+    case 10: return jmVals[1];
+    case 11: return jmVals[2];
+    case 12: return jmTotal;
+    default: return null; // Rewards/tier columns are always blank -- nothing to sort by
+  }
+}
+
+function compareForSort(a, b, qInfo, col, dir) {
+  const va = sortValueFor(a, qInfo, col);
+  const vb = sortValueFor(b, qInfo, col);
+  const aBlank = va === undefined || va === null || va === '';
+  const bBlank = vb === undefined || vb === null || vb === '';
+  if (aBlank && bBlank) return 0;
+  if (aBlank) return 1;  // blanks always sort to the bottom, regardless of direction
+  if (bBlank) return -1;
+
+  const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+  return dir === 'asc' ? cmp : -cmp;
+}
+
 function getQuarterGroups() {
   const quarters = {}; // "2026-2" -> { year, quarter, months: [..] }
   Object.values(employees).forEach(emp => {
@@ -438,39 +475,47 @@ function render() {
 
 function buildQuarterTable(qInfo, qKey, empList) {
   const [m1, m2, m3] = qInfo.months;
+  const sort = sortState[qKey];
+  const sortClass = col => sort && sort.col === col ? ' sort-' + sort.dir : '';
+  const th = col => `data-col="${col}" class="${sortClass(col).trim()}" title="Click to sort, and copy this column"`;
+
   const table = document.createElement('table');
   table.id = 'table-' + qKey;
   table.innerHTML = `
     <thead>
       <tr>
-        <th rowspan="2" data-col="0" title="Click to copy this column">Location</th>
-        <th rowspan="2" data-col="1" title="Click to copy this column">ESTY</th>
-        <th rowspan="2" data-col="2" title="Click to copy this column">Total Quarter Sales</th>
+        <th rowspan="2" ${th(0)}>Location</th>
+        <th rowspan="2" ${th(1)}>ESTY</th>
+        <th rowspan="2" ${th(2)}>Total Quarter Sales</th>
         <th colspan="6" class="pca-group-header">PCA</th>
         <th colspan="7" class="jm-group-header">Marini Skin Solutions</th>
       </tr>
       <tr>
-        <th data-col="3" title="Click to copy this column">${m1}</th>
-        <th data-col="4" title="Click to copy this column">${m2}</th>
-        <th data-col="5" title="Click to copy this column">${m3}</th>
-        <th data-col="6" title="Click to copy this column">PCA Total</th>
-        <th data-col="7" title="Click to copy this column">PCA Rewards</th>
-        <th data-col="8" title="Click to copy this column">Needed to hit Next Tier!</th>
-        <th data-col="9" title="Click to copy this column">${m1}</th>
-        <th data-col="10" title="Click to copy this column">${m2}</th>
-        <th data-col="11" title="Click to copy this column">${m3}</th>
-        <th data-col="12" title="Click to copy this column">JM Total</th>
-        <th data-col="13" title="Click to copy this column">JM % Back</th>
-        <th data-col="14" title="Click to copy this column">JM Rewards</th>
-        <th data-col="15" title="Click to copy this column">Needed to hit Next Tier!</th>
+        <th ${th(3)}>${m1}</th>
+        <th ${th(4)}>${m2}</th>
+        <th ${th(5)}>${m3}</th>
+        <th ${th(6)}>PCA Total</th>
+        <th ${th(7)}>PCA Rewards</th>
+        <th ${th(8)}>Needed to hit Next Tier!</th>
+        <th ${th(9)}>${m1}</th>
+        <th ${th(10)}>${m2}</th>
+        <th ${th(11)}>${m3}</th>
+        <th ${th(12)}>JM Total</th>
+        <th ${th(13)}>JM % Back</th>
+        <th ${th(14)}>JM Rewards</th>
+        <th ${th(15)}>Needed to hit Next Tier!</th>
       </tr>
     </thead>
     <tbody></tbody>
   `;
 
+  const displayList = sort
+    ? [...empList].sort((a, b) => compareForSort(a, b, qInfo, sort.col, sort.dir))
+    : empList;
+
   const tbody = table.querySelector('tbody');
   let lastLocation = null;
-  empList.forEach(emp => {
+  displayList.forEach(emp => {
     const pcaVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).pca);
     const jmVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).jm);
     const pcaTotal = pcaVals.reduce((s, v) => s + (v || 0), 0);
@@ -503,27 +548,39 @@ function buildQuarterTable(qInfo, qKey, empList) {
     tbody.appendChild(tr);
   });
 
-  attachColumnClickHandlers(table);
+  attachColumnClickHandlers(table, qKey);
   return table;
 }
 
-function attachColumnClickHandlers(table) {
-  table.querySelectorAll('thead th[data-col]').forEach(th => {
-    th.addEventListener('click', () => {
-      const col = Number(th.dataset.col);
-      const tbody = table.querySelector('tbody');
-      const cells = Array.from(tbody.querySelectorAll(`td:nth-child(${col + 1})`));
-      if (!cells.length) return;
-
-      table.querySelectorAll('.col-selected').forEach(el => el.classList.remove('col-selected'));
-      th.classList.add('col-selected');
-      cells.forEach(td => td.classList.add('col-selected'));
-
-      const text = cells.map(td => td.textContent).join('\n');
-      navigator.clipboard.writeText(text)
-        .then(() => setStatus('Copied ' + cells.length + ' value(s) from "' + th.textContent.trim() + '" to clipboard.'));
+function attachColumnClickHandlers(table, qKey) {
+  table.querySelectorAll('thead th[data-col]').forEach(headerCell => {
+    headerCell.addEventListener('click', () => {
+      const col = Number(headerCell.dataset.col);
+      const prev = sortState[qKey];
+      const dir = (prev && prev.col === col && prev.dir === 'asc') ? 'desc' : 'asc';
+      sortState[qKey] = { col, dir };
+      render();
+      highlightAndCopyColumn(qKey, col, dir);
     });
   });
+}
+
+function highlightAndCopyColumn(qKey, col, dir) {
+  const table = document.getElementById('table-' + qKey);
+  if (!table) return;
+  const th = table.querySelector(`thead th[data-col="${col}"]`);
+  const tbody = table.querySelector('tbody');
+  const cells = Array.from(tbody.querySelectorAll(`td:nth-child(${col + 1})`));
+  if (!th || !cells.length) return;
+
+  document.querySelectorAll('.col-selected').forEach(el => el.classList.remove('col-selected'));
+  th.classList.add('col-selected');
+  cells.forEach(td => td.classList.add('col-selected'));
+
+  const text = cells.map(td => td.textContent).join('\n');
+  navigator.clipboard.writeText(text)
+    .then(() => setStatus('Sorted by "' + th.textContent.trim() + '" (' + (dir === 'asc' ? 'ascending' : 'descending') +
+      ') and copied ' + cells.length + ' value(s) to clipboard.'));
 }
 
 function renderUncategorized() {
