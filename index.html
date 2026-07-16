@@ -273,6 +273,7 @@ function handleFiles(fileList) {
   let done = 0;
   const loadedNames = [];
   const skippedNames = [];
+  const mergedNotes = [];
 
   files.forEach(file => {
     const reader = new FileReader();
@@ -288,9 +289,19 @@ function handleFiles(fileList) {
         } else {
           loadedReports.add(reportKey);
           Object.values(report.employees).forEach(emp => {
-            const empKey = report.location + '||' + emp.name;
-            if (!employees[empKey]) employees[empKey] = { location: report.location, name: emp.name, months: {} };
-            employees[empKey].months[report.month + '-' + report.year] = { pca: emp.pca, jm: emp.jm };
+            // Keyed by name only (not location) -- someone working at multiple
+            // locations shows up once, under whichever location they were first
+            // seen at, with totals from every location added together.
+            const empKey = emp.name;
+            if (!employees[empKey]) {
+              employees[empKey] = { location: report.location, name: emp.name, months: {} };
+            } else if (employees[empKey].location !== report.location) {
+              mergedNotes.push(emp.name + ' (' + report.location + ' totals merged into their ' + employees[empKey].location + ' row)');
+            }
+            const monthKey = report.month + '-' + report.year;
+            if (!employees[empKey].months[monthKey]) employees[empKey].months[monthKey] = { pca: 0, jm: 0 };
+            employees[empKey].months[monthKey].pca += emp.pca;
+            employees[empKey].months[monthKey].jm += emp.jm;
           });
           loadedNames.push(file.name + ' (' + report.location + ' / ' + report.month + ' ' + report.year + ')');
         }
@@ -303,6 +314,7 @@ function handleFiles(fileList) {
         render();
         const parts = [];
         if (loadedNames.length) parts.push('Added: ' + loadedNames.join(', '));
+        if (mergedNotes.length) parts.push('Multi-location: ' + mergedNotes.join(', '));
         if (skippedNames.length) parts.push('Skipped: ' + skippedNames.join(', '));
         setStatus(parts.join('\n') || 'Nothing new to add.');
       }
