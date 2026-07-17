@@ -224,7 +224,7 @@
     <button id="clearAll">Clear all data</button>
   </div>
 
-  <p class="hint">Click a column header to sort the table by that column (click again to reverse) and copy its values to the clipboard. Rewards and tier columns are left blank for now.</p>
+  <p class="hint">Click a column header to sort the table by that column (click again to reverse) and copy its values to the clipboard. Rewards and tier columns are calculated automatically from the quarterly PCA/JM totals.</p>
 
   <div id="tablesContainer"></div>
 
@@ -252,9 +252,6 @@ const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const statusEl = document.getElementById('status');
 const tablesContainer = document.getElementById('tablesContainer');
-
-loadState();
-render();
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
@@ -397,6 +394,44 @@ function fmt(v) {
   return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// PCA Rewards: flat retail product credit based on quarterly PCA Total.
+const PCA_TIERS = [
+  { min: 7000, reward: 1400 },
+  { min: 5000, reward: 1000 },
+  { min: 3000, reward: 600 },
+  { min: 1000, reward: 200 },
+  { min: 0, reward: 0 }
+];
+const PCA_THRESHOLDS = [1000, 3000, 5000, 7000];
+
+function pcaTierInfo(total) {
+  const tier = PCA_TIERS.find(t => total >= t.min);
+  const nextThreshold = PCA_THRESHOLDS.find(t => t > total);
+  return {
+    reward: tier.reward,
+    needed: nextThreshold !== undefined ? nextThreshold - total : 0
+  };
+}
+
+// JM % Back / JM Rewards: percentage of quarterly JM Total, based on bracket.
+const JM_TIERS = [
+  { min: 7201, pct: 0.20 },
+  { min: 3201, pct: 0.15 },
+  { min: 1200, pct: 0.10 },
+  { min: 0, pct: 0 }
+];
+const JM_THRESHOLDS = [1200, 3201, 7201];
+
+function jmTierInfo(total) {
+  const tier = JM_TIERS.find(t => total >= t.min);
+  const nextThreshold = JM_THRESHOLDS.find(t => t > total);
+  return {
+    pct: tier.pct,
+    reward: total * tier.pct,
+    needed: nextThreshold !== undefined ? nextThreshold - total : 0
+  };
+}
+
 function sortValueFor(emp, qInfo, col) {
   const pcaVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).pca);
   const jmVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).jm);
@@ -410,11 +445,16 @@ function sortValueFor(emp, qInfo, col) {
     case 4: return pcaVals[1];
     case 5: return pcaVals[2];
     case 6: return pcaTotal;
+    case 7: return pcaTierInfo(pcaTotal).reward;
+    case 8: return pcaTierInfo(pcaTotal).needed;
     case 9: return jmVals[0];
     case 10: return jmVals[1];
     case 11: return jmVals[2];
     case 12: return jmTotal;
-    default: return null; // Rewards/tier columns are always blank -- nothing to sort by
+    case 13: return jmTierInfo(jmTotal).pct;
+    case 14: return jmTierInfo(jmTotal).reward;
+    case 15: return jmTierInfo(jmTotal).needed;
+    default: return null;
   }
 }
 
@@ -533,6 +573,8 @@ function buildQuarterTable(qInfo, qKey, empList) {
     const pcaTotal = pcaVals.reduce((s, v) => s + (v || 0), 0);
     const jmTotal = jmVals.reduce((s, v) => s + (v || 0), 0);
     const total = pcaTotal + jmTotal;
+    const pcaTier = pcaTierInfo(pcaTotal);
+    const jmTier = jmTierInfo(jmTotal);
 
     const tr = document.createElement('tr');
     if (emp.location !== lastLocation) { tr.classList.add('location-start'); lastLocation = emp.location; }
@@ -547,15 +589,15 @@ function buildQuarterTable(qInfo, qKey, empList) {
       ${monthCell(pcaVals[1])}
       ${monthCell(pcaVals[2])}
       <td class="num">${fmt(pcaTotal)}</td>
-      <td></td>
-      <td></td>
+      <td class="num">${fmt(pcaTier.reward)}</td>
+      <td class="num">${fmt(pcaTier.needed)}</td>
       ${monthCell(jmVals[0])}
       ${monthCell(jmVals[1])}
       ${monthCell(jmVals[2])}
       <td class="num">${fmt(jmTotal)}</td>
-      <td></td>
-      <td></td>
-      <td></td>
+      <td class="num">${(jmTier.pct * 100).toFixed(0)}%</td>
+      <td class="num">${fmt(jmTier.reward)}</td>
+      <td class="num">${fmt(jmTier.needed)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -633,16 +675,18 @@ function flatExportRows() {
       const pcaTotal = pcaVals.reduce((s, v) => s + (v || 0), 0);
       const jmTotal = jmVals.reduce((s, v) => s + (v || 0), 0);
       const total = pcaTotal + jmTotal;
+      const pcaTier = pcaTierInfo(pcaTotal);
+      const jmTier = jmTierInfo(jmTotal);
       lines.push([
         label, emp.location, emp.name, total.toFixed(2),
         pcaVals[0] === undefined ? '' : pcaVals[0].toFixed(2),
         pcaVals[1] === undefined ? '' : pcaVals[1].toFixed(2),
         pcaVals[2] === undefined ? '' : pcaVals[2].toFixed(2),
-        pcaTotal.toFixed(2), '', '',
+        pcaTotal.toFixed(2), pcaTier.reward.toFixed(2), pcaTier.needed.toFixed(2),
         jmVals[0] === undefined ? '' : jmVals[0].toFixed(2),
         jmVals[1] === undefined ? '' : jmVals[1].toFixed(2),
         jmVals[2] === undefined ? '' : jmVals[2].toFixed(2),
-        jmTotal.toFixed(2), '', '', ''
+        jmTotal.toFixed(2), (jmTier.pct * 100).toFixed(0) + '%', jmTier.reward.toFixed(2), jmTier.needed.toFixed(2)
       ]);
     });
   });
@@ -669,16 +713,18 @@ function exportToExcel() {
       const jmVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).jm);
       const pcaTotal = pcaVals.reduce((s, v) => s + (v || 0), 0);
       const jmTotal = jmVals.reduce((s, v) => s + (v || 0), 0);
+      const pcaTier = pcaTierInfo(pcaTotal);
+      const jmTier = jmTierInfo(jmTotal);
       rows.push([
         emp.location, emp.name, pcaTotal + jmTotal,
         pcaVals[0] === undefined ? '' : pcaVals[0],
         pcaVals[1] === undefined ? '' : pcaVals[1],
         pcaVals[2] === undefined ? '' : pcaVals[2],
-        pcaTotal, '', '',
+        pcaTotal, pcaTier.reward, pcaTier.needed,
         jmVals[0] === undefined ? '' : jmVals[0],
         jmVals[1] === undefined ? '' : jmVals[1],
         jmVals[2] === undefined ? '' : jmVals[2],
-        jmTotal, '', '', ''
+        jmTotal, jmTier.pct, jmTier.reward, jmTier.needed
       ]);
     });
 
@@ -696,11 +742,16 @@ function exportToExcel() {
       { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 15 }
     ];
 
-    const currencyCols = [2, 3, 4, 5, 6, 9, 10, 11, 12];
+    const currencyCols = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15];
+    const percentCols = [13];
     for (let r = 2; r < rows.length; r++) {
       currencyCols.forEach(c => {
         const addr = XLSX.utils.encode_cell({ r, c });
         if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = '$#,##0.00';
+      });
+      percentCols.forEach(c => {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = '0%';
       });
     }
 
@@ -762,6 +813,9 @@ function loadState() {
     // ignore corrupt saved state
   }
 }
+
+loadState();
+render();
 </script>
 </body>
 </html>
