@@ -211,6 +211,32 @@
   .detail-table tfoot td { font-weight: 700; background: #faf8f4; }
   .detail-empty { color: var(--ink-soft); font-style: italic; padding: 1rem 0; }
 
+  #tierPanel { padding: 1.3rem 1.6rem; margin-bottom: 1.75rem; }
+  .tier-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem; }
+  .tier-panel-header h2 { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 1.4rem; margin: 0; color: var(--sage-dark); }
+  #resetTiers { background: transparent; color: var(--ink-soft); border-color: var(--border); font-size: 0.8rem; padding: 0.45rem 0.9rem; }
+  #resetTiers:hover { background: #f1ece3; color: var(--ink); border-color: #cfc2b0; }
+  .tier-columns { display: flex; gap: 2rem; flex-wrap: wrap; }
+  .tier-group { flex: 1 1 260px; min-width: 240px; }
+  .tier-group h3 { font-size: 0.95rem; margin: 0 0 0.5rem; color: var(--ink); }
+  table.tier-table { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 0.85rem; width: 100%; }
+  table.tier-table th { background: #f4f0e8; color: var(--ink); position: static; cursor: default; font-size: 0.78rem; }
+  table.tier-table th::after { content: none; }
+  table.tier-table td { padding: 0.4rem 0.6rem; }
+  .tier-input-wrap { display: flex; align-items: center; gap: 0.15rem; }
+  .tier-input-wrap .tier-prefix, .tier-input-wrap .tier-suffix { color: var(--ink-soft); font-size: 0.85rem; }
+  .tier-input {
+    width: 5.5rem;
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .tier-input:focus { outline: none; border-color: var(--sage); box-shadow: 0 0 0 2px var(--sage-light); }
+
   #uncategorizedPanel {
     margin-top: 1.75rem;
     background: var(--amber-bg);
@@ -262,6 +288,30 @@
   </div>
 
   <p class="hint">Click a column header to sort by it (click again to reverse). Use the small ⧉ button in the corner of a header to copy just that column. Rewards and tier columns are calculated automatically from the quarterly PCA/JM totals.</p>
+
+  <div id="tierPanel" class="card">
+    <div class="tier-panel-header">
+      <h2>Reward Tiers</h2>
+      <button type="button" id="resetTiers">Reset to defaults</button>
+    </div>
+    <p class="hint" style="margin: 0 0 0.9rem;">Edit any threshold or reward/percentage below — the whole table recalculates automatically.</p>
+    <div class="tier-columns">
+      <div class="tier-group">
+        <h3>PCA Rewards</h3>
+        <table class="tier-table" id="pcaTierTable">
+          <thead><tr><th>Retail sales at least</th><th>Reward</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="tier-group">
+        <h3>Marini (JM) % Back</h3>
+        <table class="tier-table" id="jmTierTable">
+          <thead><tr><th>Retail sales at least</th><th>% Back</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
   <div id="tablesContainer"></div>
 
@@ -484,42 +534,106 @@ function fmt(v) {
 }
 
 // PCA Rewards: flat retail product credit based on quarterly PCA Total.
-const PCA_TIERS = [
-  { min: 7000, reward: 1400 },
-  { min: 5000, reward: 1000 },
-  { min: 3000, reward: 600 },
+// JM % Back / JM Rewards: percentage of quarterly JM Total.
+// Both are user-editable (see the Reward Tiers panel) and persisted.
+const DEFAULT_PCA_TIERS = [
   { min: 1000, reward: 200 },
-  { min: 0, reward: 0 }
+  { min: 3000, reward: 600 },
+  { min: 5000, reward: 1000 },
+  { min: 7000, reward: 1400 }
 ];
-const PCA_THRESHOLDS = [1000, 3000, 5000, 7000];
+const DEFAULT_JM_TIERS = [
+  { min: 1200, pct: 10 },
+  { min: 3201, pct: 15 },
+  { min: 7201, pct: 20 }
+];
+
+let pcaTiers = DEFAULT_PCA_TIERS.map(t => ({ ...t }));
+let jmTiers = DEFAULT_JM_TIERS.map(t => ({ ...t }));
 
 function pcaTierInfo(total) {
-  const tier = PCA_TIERS.find(t => total >= t.min);
-  const nextThreshold = PCA_THRESHOLDS.find(t => t > total);
+  const descending = [...pcaTiers].sort((a, b) => b.min - a.min);
+  const tier = descending.find(t => total >= t.min);
+  const ascendingMins = pcaTiers.map(t => t.min).sort((a, b) => a - b);
+  const nextThreshold = ascendingMins.find(m => m > total);
   return {
-    reward: tier.reward,
+    reward: tier ? tier.reward : 0,
     needed: nextThreshold !== undefined ? nextThreshold - total : 0
   };
 }
-
-// JM % Back / JM Rewards: percentage of quarterly JM Total, based on bracket.
-const JM_TIERS = [
-  { min: 7201, pct: 0.20 },
-  { min: 3201, pct: 0.15 },
-  { min: 1200, pct: 0.10 },
-  { min: 0, pct: 0 }
-];
-const JM_THRESHOLDS = [1200, 3201, 7201];
 
 function jmTierInfo(total) {
-  const tier = JM_TIERS.find(t => total >= t.min);
-  const nextThreshold = JM_THRESHOLDS.find(t => t > total);
+  const descending = [...jmTiers].sort((a, b) => b.min - a.min);
+  const tier = descending.find(t => total >= t.min);
+  const pct = (tier ? tier.pct : 0) / 100;
+  const ascendingMins = jmTiers.map(t => t.min).sort((a, b) => a - b);
+  const nextThreshold = ascendingMins.find(m => m > total);
   return {
-    pct: tier.pct,
-    reward: total * tier.pct,
+    pct,
+    reward: total * pct,
     needed: nextThreshold !== undefined ? nextThreshold - total : 0
   };
 }
+
+function renderTierPanel() {
+  const pcaBody = document.querySelector('#pcaTierTable tbody');
+  pcaBody.innerHTML = pcaTiers.map((tier, i) => `
+    <tr>
+      <td>
+        <div class="tier-input-wrap">
+          <span class="tier-prefix">$</span>
+          <input type="number" class="tier-input" min="0" step="1" value="${tier.min}" data-tier="pca" data-index="${i}" data-field="min">
+        </div>
+      </td>
+      <td>
+        <div class="tier-input-wrap">
+          <span class="tier-prefix">$</span>
+          <input type="number" class="tier-input" min="0" step="1" value="${tier.reward}" data-tier="pca" data-index="${i}" data-field="reward">
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  const jmBody = document.querySelector('#jmTierTable tbody');
+  jmBody.innerHTML = jmTiers.map((tier, i) => `
+    <tr>
+      <td>
+        <div class="tier-input-wrap">
+          <span class="tier-prefix">$</span>
+          <input type="number" class="tier-input" min="0" step="1" value="${tier.min}" data-tier="jm" data-index="${i}" data-field="min">
+        </div>
+      </td>
+      <td>
+        <div class="tier-input-wrap">
+          <input type="number" class="tier-input" min="0" max="100" step="1" value="${tier.pct}" data-tier="jm" data-index="${i}" data-field="pct">
+          <span class="tier-suffix">%</span>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('tierPanel').addEventListener('change', e => {
+  const input = e.target.closest('.tier-input');
+  if (!input) return;
+  const arr = input.dataset.tier === 'pca' ? pcaTiers : jmTiers;
+  const idx = Number(input.dataset.index);
+  const field = input.dataset.field;
+  const value = Number(input.value);
+  if (Number.isNaN(value) || value < 0) { renderTierPanel(); return; }
+  arr[idx][field] = value;
+  saveState();
+  render();
+});
+
+document.getElementById('resetTiers').addEventListener('click', () => {
+  if (!confirm('Reset reward tiers back to the original defaults?')) return;
+  pcaTiers = DEFAULT_PCA_TIERS.map(t => ({ ...t }));
+  jmTiers = DEFAULT_JM_TIERS.map(t => ({ ...t }));
+  saveState();
+  renderTierPanel();
+  render();
+});
 
 function sortValueFor(emp, qInfo, col) {
   const pcaVals = qInfo.months.map(m => (emp.months[m + '-' + qInfo.year] || {}).pca);
@@ -1012,7 +1126,9 @@ function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     employees: employees,
     loadedReports: Array.from(loadedReports),
-    uncategorized: Array.from(uncategorized.entries())
+    uncategorized: Array.from(uncategorized.entries()),
+    pcaTiers: pcaTiers,
+    jmTiers: jmTiers
   }));
 }
 
@@ -1024,12 +1140,15 @@ function loadState() {
     employees = data.employees || {};
     loadedReports = new Set(data.loadedReports || []);
     (data.uncategorized || []).forEach(([d, c]) => uncategorized.set(d, c));
+    if (Array.isArray(data.pcaTiers) && data.pcaTiers.length) pcaTiers = data.pcaTiers;
+    if (Array.isArray(data.jmTiers) && data.jmTiers.length) jmTiers = data.jmTiers;
   } catch (e) {
     // ignore corrupt saved state
   }
 }
 
 loadState();
+renderTierPanel();
 render();
 </script>
 </body>
