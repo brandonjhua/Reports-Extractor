@@ -750,7 +750,7 @@ tablesContainer.addEventListener('click', e => {
     if (activeDetailEmployee === fullName) {
       closeDetail();
     } else {
-      showEmployeeDetail(fullName);
+      showEmployeeDetail(fullName, { scroll: true });
     }
   } catch (err) {
     setStatus('Could not open detail view: ' + err.message);
@@ -765,7 +765,7 @@ function closeDetail() {
   document.querySelectorAll('.esty-cell.esty-active').forEach(el => el.classList.remove('esty-active'));
 }
 
-function showEmployeeDetail(fullName) {
+function showEmployeeDetail(fullName, { scroll = false } = {}) {
   const emp = employees[fullName];
   const panel = document.getElementById('detailPanel');
   if (!emp) { closeDetail(); return; }
@@ -849,7 +849,7 @@ function showEmployeeDetail(fullName) {
   panel.innerHTML = html;
   panel.style.display = 'block';
   document.getElementById('closeDetail').addEventListener('click', closeDetail);
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (scroll) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderUncategorized() {
