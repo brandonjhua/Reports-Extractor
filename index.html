@@ -454,6 +454,14 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// The report sometimes stores Quantity as a number (1) and sometimes as text
+// with accounting-style parens for refunds (e.g. "(1.00)") -- handle both.
+function formatQuantity(q) {
+  if (q === undefined || q === null || q === '') return '';
+  if (typeof q === 'number') return q.toFixed(2);
+  return escapeHtml(q);
+}
+
 function fmt(v) {
   if (v === undefined || v === null) return '';
   return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -713,10 +721,14 @@ tablesContainer.addEventListener('click', e => {
   const cell = e.target.closest('.esty-cell');
   if (!cell) return;
   const fullName = cell.dataset.fullname;
-  if (activeDetailEmployee === fullName) {
-    closeDetail();
-  } else {
-    showEmployeeDetail(fullName);
+  try {
+    if (activeDetailEmployee === fullName) {
+      closeDetail();
+    } else {
+      showEmployeeDetail(fullName);
+    }
+  } catch (err) {
+    setStatus('Could not open detail view: ' + err.message);
   }
 });
 
@@ -785,7 +797,7 @@ function showEmployeeDetail(fullName) {
               <td>${escapeHtml(i.client)}</td>
               <td>${escapeHtml(i.transaction)}</td>
               <td>${escapeHtml(i.description)}</td>
-              <td class="num">${i.quantity !== undefined ? i.quantity.toFixed(2) : ''}</td>
+              <td class="num">${formatQuantity(i.quantity)}</td>
               <td class="num">${fmt(i.price)}</td>
               <td>${i.brand === 'pca' ? 'PCA' : i.brand === 'jm' ? 'Marini' : 'Not counted'}</td>
             </tr>
