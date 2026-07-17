@@ -188,6 +188,7 @@
   .detail-table { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 0.85rem; }
   .detail-table th { background: #f4f0e8; color: var(--ink); position: static; cursor: default; }
   .detail-table th::after { content: none; }
+  .detail-table tr.detail-date-row td { background: #efe9db; font-weight: 700; text-decoration: underline; border-left: none; }
   .detail-table tr.brand-pca td:first-child { border-left: 4px solid var(--pca-text); }
   .detail-table tr.brand-jm td:first-child { border-left: 4px solid var(--jm-text); }
   .detail-table tr.brand-none td:first-child { border-left: 4px solid transparent; color: var(--ink-soft); }
@@ -331,7 +332,8 @@ function handleFiles(fileList) {
             employees[empKey].months[monthKey].pca += emp.pca;
             employees[empKey].months[monthKey].jm += emp.jm;
             emp.items.forEach(it => employees[empKey].months[monthKey].items.push({
-              location: report.location, description: it.description, price: it.price, brand: it.brand
+              location: report.location, date: it.date, client: it.client, transaction: it.transaction,
+              description: it.description, quantity: it.quantity, price: it.price, brand: it.brand
             }));
           });
           loadedNames.push(file.name + ' (' + report.location + ' / ' + report.month + ' ' + report.year + ')');
@@ -375,6 +377,9 @@ function parseMR200(sheet, fileName) {
   const employeesFound = {};
   let currentId = null;
   let section = null;
+  let currentDate = '';
+  let currentClient = '';
+  let currentTransaction = '';
 
   for (let r = 4; r <= range.e.r; r++) {
     const colA = cellText(sheet, 'A' + (r + 1));
@@ -383,19 +388,40 @@ function parseMR200(sheet, fileName) {
       currentId = employeeMatch[1].trim();
       employeesFound[currentId] = { id: currentId, fullName: employeeMatch[2].trim(), pca: 0, jm: 0, items: [] };
       section = 'services';
+      currentDate = ''; currentClient = ''; currentTransaction = '';
       continue;
     }
     if (!currentId) continue;
-    if (colA === 'Products') { section = 'products'; continue; }
+    if (colA === 'Products') { section = 'products'; currentDate = ''; currentClient = ''; currentTransaction = ''; continue; }
     if (section !== 'products') continue;
 
     const description = cellText(sheet, 'F' + (r + 1));
+
+    // A row with a value in Client (A) but nothing in Description (F) is a date
+    // divider (e.g. "Sun 6/1/2026"), same as it appears in the raw report.
+    if (!description) {
+      if (colA) { currentDate = colA; currentClient = ''; currentTransaction = ''; }
+      continue;
+    }
+    if (description.startsWith('Total')) continue;
+
     const priceCell = sheet['K' + (r + 1)];
     const price = priceCell ? priceCell.v : undefined;
-    if (!description.includes(':') || description.startsWith('Total') || typeof price !== 'number') continue;
+    if (!description.includes(':') || typeof price !== 'number') continue;
+
+    // Client/Transaction only appear on the first item row for that client;
+    // later item rows for the same client leave them blank (carry forward).
+    if (colA) currentClient = colA;
+    const colC = cellText(sheet, 'C' + (r + 1));
+    if (colC) currentTransaction = colC;
+    const quantityCell = sheet['J' + (r + 1)];
+    const quantity = quantityCell ? quantityCell.v : undefined;
 
     const brand = classifyBrand(description);
-    employeesFound[currentId].items.push({ description, price, brand });
+    employeesFound[currentId].items.push({
+      date: currentDate, client: currentClient, transaction: currentTransaction,
+      description, quantity, price, brand
+    });
     if (brand === 'pca') employeesFound[currentId].pca += price;
     else if (brand === 'jm') employeesFound[currentId].jm += price;
     else recordUncategorized(description);
@@ -742,23 +768,40 @@ function showEmployeeDetail(fullName) {
       const pcaSum = items.filter(i => i.brand === 'pca').reduce((s, i) => s + i.price, 0);
       const jmSum = items.filter(i => i.brand === 'jm').reduce((s, i) => s + i.price, 0);
 
+      // Grouped by date, in the order the report listed them -- same as the raw file.
+      const byDate = new Map();
+      items.forEach(it => {
+        const key = it.date || '(no date)';
+        if (!byDate.has(key)) byDate.set(key, []);
+        byDate.get(key).push(it);
+      });
+
+      let rowsHtml = '';
+      byDate.forEach((dateItems, date) => {
+        rowsHtml += `<tr class="detail-date-row"><td colspan="6">${escapeHtml(date)}</td></tr>`;
+        dateItems.forEach(i => {
+          rowsHtml += `
+            <tr class="brand-${i.brand || 'none'}">
+              <td>${escapeHtml(i.client)}</td>
+              <td>${escapeHtml(i.transaction)}</td>
+              <td>${escapeHtml(i.description)}</td>
+              <td class="num">${i.quantity !== undefined ? i.quantity.toFixed(2) : ''}</td>
+              <td class="num">${fmt(i.price)}</td>
+              <td>${i.brand === 'pca' ? 'PCA' : i.brand === 'jm' ? 'Marini' : 'Not counted'}</td>
+            </tr>
+          `;
+        });
+      });
+
       html += `
         <div class="detail-report">
-          <h3>${escapeHtml(loc)} — ${monthName} ${year} <span style="color:var(--ink-soft); font-weight:400;">(exactly as it appeared in the uploaded report's Products section)</span></h3>
+          <h3>${escapeHtml(loc)} — ${monthName} ${year} <span style="color:var(--ink-soft); font-weight:400;">(Products section, laid out the same as the uploaded report)</span></h3>
           <table class="detail-table">
-            <thead><tr><th>Description</th><th>Price</th><th>Counted as</th></tr></thead>
-            <tbody>
-              ${items.map(i => `
-                <tr class="brand-${i.brand || 'none'}">
-                  <td>${escapeHtml(i.description)}</td>
-                  <td class="num">${fmt(i.price)}</td>
-                  <td>${i.brand === 'pca' ? 'PCA' : i.brand === 'jm' ? 'Marini' : 'Not counted'}</td>
-                </tr>
-              `).join('')}
-            </tbody>
+            <thead><tr><th>Client</th><th>Transaction</th><th>Description</th><th>Quantity</th><th>Price</th><th>Counted as</th></tr></thead>
+            <tbody>${rowsHtml}</tbody>
             <tfoot>
-              <tr><td colspan="2">PCA subtotal</td><td class="num">${fmt(pcaSum)}</td></tr>
-              <tr><td colspan="2">Marini subtotal</td><td class="num">${fmt(jmSum)}</td></tr>
+              <tr><td colspan="4">PCA subtotal</td><td class="num">${fmt(pcaSum)}</td><td>PCA</td></tr>
+              <tr><td colspan="4">Marini subtotal</td><td class="num">${fmt(jmSum)}</td><td>Marini</td></tr>
             </tfoot>
           </table>
         </div>
