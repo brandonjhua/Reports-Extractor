@@ -151,12 +151,28 @@
     max-width: 90px;
   }
   thead tr:first-child th { background: var(--sage); color: #fff; }
-  thead th[data-col] { cursor: pointer; }
+  thead th[data-col] { cursor: pointer; padding-right: 1.6rem; }
   thead th[data-col]:hover { filter: brightness(0.93); }
-  thead th[data-col]::after { content: ' \2398'; opacity: 0.6; font-size: 0.75em; }
   thead th.sort-asc::before { content: '\25B2 '; font-size: 0.75em; }
   thead th.sort-desc::before { content: '\25BC '; font-size: 0.75em; }
   thead th.col-selected { background: var(--blush-dark) !important; color: #fff !important; }
+  .col-copy-btn {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 17px;
+    height: 17px;
+    line-height: 15px;
+    padding: 0;
+    font-size: 0.72rem;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.25);
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.75;
+  }
+  .col-copy-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.6); }
   th.pca-group-header { background: var(--pca-bg); color: var(--pca-text); }
   th.jm-group-header { background: var(--jm-bg); color: var(--jm-text); }
   thead tr:nth-child(2) th:nth-child(-n+7) { background: #f4f6fb; color: var(--pca-text); }
@@ -245,7 +261,7 @@
     <button id="clearAll">Clear all data</button>
   </div>
 
-  <p class="hint">Click a column header to sort the table by that column (click again to reverse) and copy its values to the clipboard. Rewards and tier columns are calculated automatically from the quarterly PCA/JM totals.</p>
+  <p class="hint">Click a column header to sort by it (click again to reverse). Use the small ⧉ button in the corner of a header to copy just that column. Rewards and tier columns are calculated automatically from the quarterly PCA/JM totals.</p>
 
   <div id="tablesContainer"></div>
 
@@ -607,33 +623,37 @@ function buildQuarterTable(qInfo, qKey, empList) {
   const [m1, m2, m3] = qInfo.months;
   const sort = sortState[qKey];
   const sortClass = col => sort && sort.col === col ? ' sort-' + sort.dir : '';
-  const th = col => `data-col="${col}" class="${sortClass(col).trim()}" title="Click to sort, and copy this column"`;
+  const th = (col, label, extraAttrs) => `
+    <th ${extraAttrs || ''} data-col="${col}" data-label="${escapeHtml(label)}" class="${sortClass(col).trim()}" title="Click to sort by ${escapeHtml(label)}">
+      ${label}<button type="button" class="col-copy-btn" data-copy-col="${col}" title="Copy this column to clipboard">⧉</button>
+    </th>
+  `;
 
   const table = document.createElement('table');
   table.id = 'table-' + qKey;
   table.innerHTML = `
     <thead>
       <tr>
-        <th rowspan="2" ${th(0)}>Location</th>
-        <th rowspan="2" ${th(1)}>ESTY</th>
-        <th rowspan="2" ${th(2)}>Total Quarter Sales</th>
+        ${th(0, 'Location', 'rowspan="2"')}
+        ${th(1, 'ESTY', 'rowspan="2"')}
+        ${th(2, 'Total Quarter Sales', 'rowspan="2"')}
         <th colspan="6" class="pca-group-header">PCA</th>
         <th colspan="7" class="jm-group-header">Marini Skin Solutions</th>
       </tr>
       <tr>
-        <th ${th(3)}>${m1}</th>
-        <th ${th(4)}>${m2}</th>
-        <th ${th(5)}>${m3}</th>
-        <th ${th(6)}>PCA Total</th>
-        <th ${th(7)}>PCA Rewards</th>
-        <th ${th(8)}>Needed to hit Next Tier!</th>
-        <th ${th(9)}>${m1}</th>
-        <th ${th(10)}>${m2}</th>
-        <th ${th(11)}>${m3}</th>
-        <th ${th(12)}>JM Total</th>
-        <th ${th(13)}>JM % Back</th>
-        <th ${th(14)}>JM Rewards</th>
-        <th ${th(15)}>Needed to hit Next Tier!</th>
+        ${th(3, m1)}
+        ${th(4, m2)}
+        ${th(5, m3)}
+        ${th(6, 'PCA Total')}
+        ${th(7, 'PCA Rewards')}
+        ${th(8, 'Needed to hit Next Tier!')}
+        ${th(9, m1)}
+        ${th(10, m2)}
+        ${th(11, m3)}
+        ${th(12, 'JM Total')}
+        ${th(13, 'JM % Back')}
+        ${th(14, 'JM Rewards')}
+        ${th(15, 'Needed to hit Next Tier!')}
       </tr>
     </thead>
     <tbody></tbody>
@@ -692,12 +712,18 @@ function attachColumnClickHandlers(table, qKey) {
       const dir = (prev && prev.col === col && prev.dir === 'asc') ? 'desc' : 'asc';
       sortState[qKey] = { col, dir };
       render();
-      highlightAndCopyColumn(qKey, col, dir);
+    });
+  });
+
+  table.querySelectorAll('.col-copy-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation(); // don't trigger the header's sort click
+      copyColumn(qKey, Number(btn.dataset.copyCol));
     });
   });
 }
 
-function highlightAndCopyColumn(qKey, col, dir) {
+function copyColumn(qKey, col) {
   const table = document.getElementById('table-' + qKey);
   if (!table) return;
   const th = table.querySelector(`thead th[data-col="${col}"]`);
@@ -711,8 +737,7 @@ function highlightAndCopyColumn(qKey, col, dir) {
 
   const text = cells.map(td => td.textContent).join('\n');
   navigator.clipboard.writeText(text)
-    .then(() => setStatus('Sorted by "' + th.textContent.trim() + '" (' + (dir === 'asc' ? 'ascending' : 'descending') +
-      ') and copied ' + cells.length + ' value(s) to clipboard.'));
+    .then(() => setStatus('Copied ' + cells.length + ' value(s) from "' + th.dataset.label + '" to clipboard.'));
 }
 
 let activeDetailEmployee = null;
