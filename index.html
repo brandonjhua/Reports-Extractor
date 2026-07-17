@@ -211,12 +211,22 @@
   .detail-table tfoot td { font-weight: 700; background: #faf8f4; }
   .detail-empty { color: var(--ink-soft); font-style: italic; padding: 1rem 0; }
 
-  #tierPanel { padding: 1.1rem 1.3rem; margin-bottom: 1.75rem; max-width: 50%; min-width: 420px; }
-  .tier-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem; }
-  .tier-panel-header h2 { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 1.3rem; margin: 0; color: var(--sage-dark); }
+  #tierPanel { padding: 1.1rem 1.3rem; margin-bottom: 1.5rem; max-width: 50%; min-width: 420px; }
+  .tier-panel-header { display: flex; align-items: center; justify-content: space-between; }
+  .tier-toggle-btn {
+    display: flex; align-items: center; gap: 0.4rem;
+    background: transparent; border: none; padding: 0; margin: 0;
+    font-family: 'Cormorant Garamond', Georgia, serif; font-size: 1.3rem; color: var(--sage-dark);
+    cursor: pointer;
+  }
+  .tier-toggle-icon { display: inline-block; font-size: 0.8rem; transition: transform 0.15s ease; }
+  #tierPanel.collapsed .tier-toggle-icon { transform: rotate(-90deg); }
+  #tierPanel.collapsed .tier-panel-header { margin-bottom: 0; }
+  #tierPanel.collapsed #tierPanelBody { display: none; }
   #resetTiers { background: transparent; color: var(--ink-soft); border-color: var(--border); font-size: 0.8rem; padding: 0.4rem 0.8rem; }
   #resetTiers:hover { background: #f1ece3; color: var(--ink); border-color: #cfc2b0; }
   #tierPanel .hint { font-size: 0.85rem; margin-bottom: 0.8rem !important; }
+  #tierPanelBody { margin-top: 0.6rem; }
   .tier-columns { display: flex; gap: 1.2rem; flex-wrap: wrap; }
   .tier-group { flex: 1 1 190px; min-width: 180px; }
   .tier-group h3 { font-size: 1rem; margin: 0 0 0.45rem; color: var(--ink); }
@@ -279,6 +289,34 @@
   </div>
   <input type="file" id="fileInput" accept=".xlsx" multiple style="display:none">
 
+  <div id="tierPanel" class="card">
+    <div class="tier-panel-header">
+      <button type="button" id="toggleTierPanel" class="tier-toggle-btn" title="Minimize / expand" aria-expanded="true">
+        <span class="tier-toggle-icon">&#9662;</span> Reward Tiers
+      </button>
+      <button type="button" id="resetTiers">Reset to defaults</button>
+    </div>
+    <div id="tierPanelBody">
+      <p class="hint" style="margin: 0 0 0.9rem;">Edit any threshold or reward/percentage below — the whole table recalculates automatically.</p>
+      <div class="tier-columns">
+        <div class="tier-group">
+          <h3>PCA Rewards</h3>
+          <table class="tier-table" id="pcaTierTable">
+            <thead><tr><th>Retail sales at least</th><th>Reward</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="tier-group">
+          <h3>Marini (JM) % Back</h3>
+          <table class="tier-table" id="jmTierTable">
+            <thead><tr><th>Retail sales at least</th><th>% Back</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="status"></div>
 
   <div class="toolbar">
@@ -289,30 +327,6 @@
   </div>
 
   <p class="hint">Click a column header to sort by it (click again to reverse). Use the small ⧉ button in the corner of a header to copy just that column. Rewards and tier columns are calculated automatically from the quarterly PCA/JM totals.</p>
-
-  <div id="tierPanel" class="card">
-    <div class="tier-panel-header">
-      <h2>Reward Tiers</h2>
-      <button type="button" id="resetTiers">Reset to defaults</button>
-    </div>
-    <p class="hint" style="margin: 0 0 0.9rem;">Edit any threshold or reward/percentage below — the whole table recalculates automatically.</p>
-    <div class="tier-columns">
-      <div class="tier-group">
-        <h3>PCA Rewards</h3>
-        <table class="tier-table" id="pcaTierTable">
-          <thead><tr><th>Retail sales at least</th><th>Reward</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="tier-group">
-        <h3>Marini (JM) % Back</h3>
-        <table class="tier-table" id="jmTierTable">
-          <thead><tr><th>Retail sales at least</th><th>% Back</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
 
   <div id="tablesContainer"></div>
 
@@ -330,6 +344,7 @@
 
 <script>
 const STORAGE_KEY = 'mr200_dashboard_v2';
+const TIER_PANEL_COLLAPSED_KEY = 'mr200_tier_panel_collapsed';
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const QUARTER_MONTHS = { 1: MONTH_NAMES.slice(0,3), 2: MONTH_NAMES.slice(3,6), 3: MONTH_NAMES.slice(6,9), 4: MONTH_NAMES.slice(9,12) };
 
@@ -634,6 +649,13 @@ document.getElementById('resetTiers').addEventListener('click', () => {
   saveState();
   renderTierPanel();
   render();
+});
+
+document.getElementById('toggleTierPanel').addEventListener('click', () => {
+  const panel = document.getElementById('tierPanel');
+  const collapsed = panel.classList.toggle('collapsed');
+  document.getElementById('toggleTierPanel').setAttribute('aria-expanded', String(!collapsed));
+  localStorage.setItem(TIER_PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
 });
 
 function sortValueFor(emp, qInfo, col) {
@@ -1148,8 +1170,16 @@ function loadState() {
   }
 }
 
+function restoreTierPanelCollapsed() {
+  if (localStorage.getItem(TIER_PANEL_COLLAPSED_KEY) === '1') {
+    document.getElementById('tierPanel').classList.add('collapsed');
+    document.getElementById('toggleTierPanel').setAttribute('aria-expanded', 'false');
+  }
+}
+
 loadState();
 renderTierPanel();
+restoreTierPanelCollapsed();
 render();
 </script>
 </body>
