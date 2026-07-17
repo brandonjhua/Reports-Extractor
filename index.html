@@ -286,14 +286,23 @@ function handleFiles(fileList) {
         } else {
           loadedReports.add(reportKey);
           Object.values(report.employees).forEach(emp => {
-            // Keyed by name only (not location) -- someone working at multiple
-            // locations shows up once, under whichever location they were first
-            // seen at, with totals from every location added together.
-            const empKey = emp.name;
+            // Matched by the full "Last, First" name from the report -- this is
+            // more reliable than the short ID/nickname next to it, which can be
+            // typo'd differently between reports (e.g. "DANI" vs "DANII" for the
+            // same "Givenrod, Jenna"). Whichever ID was seen first is what's
+            // displayed as the ESTY name going forward.
+            const empKey = emp.fullName;
             if (!employees[empKey]) {
-              employees[empKey] = { location: report.location, name: emp.name, months: {} };
-            } else if (employees[empKey].location !== report.location) {
-              mergedNotes.push(emp.name + ' (' + report.location + ' totals merged into their ' + employees[empKey].location + ' row)');
+              employees[empKey] = { location: report.location, name: emp.id, months: {} };
+            } else {
+              const existing = employees[empKey];
+              if (existing.location !== report.location) {
+                mergedNotes.push(emp.fullName + ': ' + report.location + ' totals merged into their ' +
+                  existing.location + ' row (shown as "' + existing.name + '")');
+              } else if (existing.name !== emp.id) {
+                mergedNotes.push(emp.fullName + ': matched despite ID showing as "' + emp.id +
+                  '" this time (still shown as "' + existing.name + '")');
+              }
             }
             const monthKey = report.month + '-' + report.year;
             if (!employees[empKey].months[monthKey]) employees[empKey].months[monthKey] = { pca: 0, jm: 0 };
@@ -311,7 +320,7 @@ function handleFiles(fileList) {
         render();
         const parts = [];
         if (loadedNames.length) parts.push('Added: ' + loadedNames.join(', '));
-        if (mergedNotes.length) parts.push('Multi-location: ' + mergedNotes.join(', '));
+        if (mergedNotes.length) parts.push('Merged: ' + mergedNotes.join(', '));
         if (skippedNames.length) parts.push('Skipped: ' + skippedNames.join(', '));
         setStatus(parts.join('\n') || 'Nothing new to add.');
       }
@@ -347,7 +356,7 @@ function parseMR200(sheet, fileName) {
     const employeeMatch = colA.match(/^Employee:\s*([^:]+):\s*(.+)$/);
     if (employeeMatch) {
       currentId = employeeMatch[1].trim();
-      employeesFound[currentId] = { name: currentId, pca: 0, jm: 0 };
+      employeesFound[currentId] = { id: currentId, fullName: employeeMatch[2].trim(), pca: 0, jm: 0 };
       section = 'services';
       continue;
     }
