@@ -166,6 +166,9 @@
   tr.location-start td { border-top: 2px solid var(--sage); }
   td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--sage-dark); }
   td.blank-cell { color: #ccc; }
+  td.esty-cell { cursor: pointer; text-decoration: underline dotted; text-decoration-color: #ccc; }
+  td.esty-cell:hover { color: var(--sage-dark); background: var(--sage-light); }
+  td.esty-cell.esty-active { background: var(--blush); font-weight: 700; }
 
   .empty-state {
     text-align: center;
@@ -173,6 +176,23 @@
     padding: 2rem;
     font-style: italic;
   }
+
+  #detailPanel { margin-top: 1.75rem; padding: 1.4rem 1.6rem; }
+  .detail-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .detail-header h2 { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 1.4rem; margin: 0; color: var(--sage-dark); }
+  .detail-header .detail-fullname { font-size: 0.9rem; font-weight: 400; color: var(--ink-soft); }
+  #closeDetail { background: transparent; color: var(--ink-soft); border-color: var(--border); }
+  #closeDetail:hover { background: #f1ece3; color: var(--ink); border-color: #cfc2b0; }
+  .detail-report { margin-bottom: 1.5rem; }
+  .detail-report h3 { font-size: 1rem; margin: 0 0 0.5rem; color: var(--ink); }
+  .detail-table { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 0.85rem; }
+  .detail-table th { background: #f4f0e8; color: var(--ink); position: static; cursor: default; }
+  .detail-table th::after { content: none; }
+  .detail-table tr.brand-pca td:first-child { border-left: 4px solid var(--pca-text); }
+  .detail-table tr.brand-jm td:first-child { border-left: 4px solid var(--jm-text); }
+  .detail-table tr.brand-none td:first-child { border-left: 4px solid transparent; color: var(--ink-soft); }
+  .detail-table tfoot td { font-weight: 700; background: #faf8f4; }
+  .detail-empty { color: var(--ink-soft); font-style: italic; padding: 1rem 0; }
 
   #uncategorizedPanel {
     margin-top: 1.75rem;
@@ -227,6 +247,8 @@
   <p class="hint">Click a column header to sort the table by that column (click again to reverse) and copy its values to the clipboard. Rewards and tier columns are calculated automatically from the quarterly PCA/JM totals.</p>
 
   <div id="tablesContainer"></div>
+
+  <div id="detailPanel" class="card" style="display:none;"></div>
 
   <div id="uncategorizedPanel" style="display:none;">
     <h2>Uncategorized product/service lines</h2>
@@ -293,7 +315,7 @@ function handleFiles(fileList) {
             // displayed as the ESTY name going forward.
             const empKey = emp.fullName;
             if (!employees[empKey]) {
-              employees[empKey] = { location: report.location, name: emp.id, months: {} };
+              employees[empKey] = { location: report.location, name: emp.id, fullName: empKey, months: {} };
             } else {
               const existing = employees[empKey];
               if (existing.location !== report.location) {
@@ -305,9 +327,12 @@ function handleFiles(fileList) {
               }
             }
             const monthKey = report.month + '-' + report.year;
-            if (!employees[empKey].months[monthKey]) employees[empKey].months[monthKey] = { pca: 0, jm: 0 };
+            if (!employees[empKey].months[monthKey]) employees[empKey].months[monthKey] = { pca: 0, jm: 0, items: [] };
             employees[empKey].months[monthKey].pca += emp.pca;
             employees[empKey].months[monthKey].jm += emp.jm;
+            emp.items.forEach(it => employees[empKey].months[monthKey].items.push({
+              location: report.location, description: it.description, price: it.price, brand: it.brand
+            }));
           });
           loadedNames.push(file.name + ' (' + report.location + ' / ' + report.month + ' ' + report.year + ')');
         }
@@ -356,7 +381,7 @@ function parseMR200(sheet, fileName) {
     const employeeMatch = colA.match(/^Employee:\s*([^:]+):\s*(.+)$/);
     if (employeeMatch) {
       currentId = employeeMatch[1].trim();
-      employeesFound[currentId] = { id: currentId, fullName: employeeMatch[2].trim(), pca: 0, jm: 0 };
+      employeesFound[currentId] = { id: currentId, fullName: employeeMatch[2].trim(), pca: 0, jm: 0, items: [] };
       section = 'services';
       continue;
     }
@@ -370,6 +395,7 @@ function parseMR200(sheet, fileName) {
     if (!description.includes(':') || description.startsWith('Total') || typeof price !== 'number') continue;
 
     const brand = classifyBrand(description);
+    employeesFound[currentId].items.push({ description, price, brand });
     if (brand === 'pca') employeesFound[currentId].pca += price;
     else if (brand === 'jm') employeesFound[currentId].jm += price;
     else recordUncategorized(description);
@@ -396,6 +422,10 @@ function recordUncategorized(description) {
 
 function quarterOfMonth(monthName) {
   return Math.floor(MONTH_NAMES.indexOf(monthName) / 3) + 1;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function fmt(v) {
@@ -532,6 +562,11 @@ function render() {
   }
 
   renderUncategorized();
+
+  if (activeDetailEmployee) {
+    if (employees[activeDetailEmployee]) showEmployeeDetail(activeDetailEmployee);
+    else closeDetail();
+  }
 }
 
 function buildQuarterTable(qInfo, qKey, empList) {
@@ -591,8 +626,8 @@ function buildQuarterTable(qInfo, qKey, empList) {
     const monthCell = v => v === undefined ? '<td class="num blank-cell"></td>' : `<td class="num">${fmt(v)}</td>`;
 
     tr.innerHTML = `
-      <td>${emp.location}</td>
-      <td>${emp.name}</td>
+      <td>${escapeHtml(emp.location)}</td>
+      <td class="esty-cell" data-fullname="${escapeHtml(emp.fullName)}" title="Click to see every report line that fed into this row">${escapeHtml(emp.name)}</td>
       <td class="num">${fmt(total)}</td>
       ${monthCell(pcaVals[0])}
       ${monthCell(pcaVals[1])}
@@ -644,6 +679,97 @@ function highlightAndCopyColumn(qKey, col, dir) {
   navigator.clipboard.writeText(text)
     .then(() => setStatus('Sorted by "' + th.textContent.trim() + '" (' + (dir === 'asc' ? 'ascending' : 'descending') +
       ') and copied ' + cells.length + ' value(s) to clipboard.'));
+}
+
+let activeDetailEmployee = null;
+
+tablesContainer.addEventListener('click', e => {
+  const cell = e.target.closest('.esty-cell');
+  if (!cell) return;
+  const fullName = cell.dataset.fullname;
+  if (activeDetailEmployee === fullName) {
+    closeDetail();
+  } else {
+    showEmployeeDetail(fullName);
+  }
+});
+
+function closeDetail() {
+  activeDetailEmployee = null;
+  const panel = document.getElementById('detailPanel');
+  panel.style.display = 'none';
+  panel.innerHTML = '';
+  document.querySelectorAll('.esty-cell.esty-active').forEach(el => el.classList.remove('esty-active'));
+}
+
+function showEmployeeDetail(fullName) {
+  const emp = employees[fullName];
+  const panel = document.getElementById('detailPanel');
+  if (!emp) { closeDetail(); return; }
+
+  activeDetailEmployee = fullName;
+  document.querySelectorAll('.esty-cell.esty-active').forEach(el => el.classList.remove('esty-active'));
+  document.querySelectorAll(`.esty-cell[data-fullname="${CSS.escape(fullName)}"]`).forEach(el => el.classList.add('esty-active'));
+
+  const monthKeys = Object.keys(emp.months).sort((a, b) => {
+    const [ma, ya] = a.split('-');
+    const [mb, yb] = b.split('-');
+    return Number(ya) - Number(yb) || MONTH_NAMES.indexOf(ma) - MONTH_NAMES.indexOf(mb);
+  });
+
+  let html = `
+    <div class="detail-header">
+      <h2>${escapeHtml(emp.name)} <span class="detail-fullname">(${escapeHtml(fullName)})</span></h2>
+      <button id="closeDetail">Close</button>
+    </div>
+  `;
+
+  if (!monthKeys.length) {
+    html += '<p class="detail-empty">No report data found for this person.</p>';
+  }
+
+  monthKeys.forEach(monthKey => {
+    const [monthName, year] = monthKey.split('-');
+    const monthData = emp.months[monthKey];
+    const byLocation = {};
+    (monthData.items || []).forEach(it => {
+      if (!byLocation[it.location]) byLocation[it.location] = [];
+      byLocation[it.location].push(it);
+    });
+
+    Object.keys(byLocation).sort().forEach(loc => {
+      const items = byLocation[loc];
+      const pcaSum = items.filter(i => i.brand === 'pca').reduce((s, i) => s + i.price, 0);
+      const jmSum = items.filter(i => i.brand === 'jm').reduce((s, i) => s + i.price, 0);
+
+      html += `
+        <div class="detail-report">
+          <h3>${escapeHtml(loc)} — ${monthName} ${year} <span style="color:var(--ink-soft); font-weight:400;">(exactly as it appeared in the uploaded report's Products section)</span></h3>
+          <table class="detail-table">
+            <thead><tr><th>Description</th><th>Price</th><th>Counted as</th></tr></thead>
+            <tbody>
+              ${items.map(i => `
+                <tr class="brand-${i.brand || 'none'}">
+                  <td>${escapeHtml(i.description)}</td>
+                  <td class="num">${fmt(i.price)}</td>
+                  <td>${i.brand === 'pca' ? 'PCA' : i.brand === 'jm' ? 'Marini' : 'Not counted'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr><td colspan="2">PCA subtotal</td><td class="num">${fmt(pcaSum)}</td></tr>
+              <tr><td colspan="2">Marini subtotal</td><td class="num">${fmt(jmSum)}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+    });
+  });
+
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+  document.getElementById('closeDetail').addEventListener('click', closeDetail);
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderUncategorized() {
